@@ -31,21 +31,47 @@ the same count and amount. It runs three kinds of check:
 | Bronze | `bronze_<system>` | Raw rows as strings, plus file name and load time |
 | Silver | `silver_txn` | All systems mapped to one standard schema |
 | Silver | `silver_rejects` | Rows that failed parsing, with a reason |
+| Silver | `silver_extract_status` | Per system and date: `LOADED` or `MISSING`, file count, rows loaded and rejected |
 | Gold | `gold_control_totals` | Count and amount per system × date × direction × currency × txn type |
 | Gold | `gold_recon_results` | Source vs target totals per hop and end to end, with diff and status |
 | Gold | `gold_break_details` | Transactions behind each break |
+| Gold | `gold_run_status` | Append-only log of completed recon runs, written last |
 
 Each system's layout is declared in [`src/e2e_recon/conf/systems.yml`](src/e2e_recon/conf/systems.yml):
 column names, date format, minor-unit amounts and code mappings (`D`→`OUT`, `05`→`PURCHASE`, and so
 on). To add a system or change a layout, you edit the YAML, not the code.
 
-Every write replaces exactly one business date, so a rerun of the same date is idempotent.
+Every layer write replaces exactly one business date, so a rerun of the same date is idempotent.
+`gold_run_status` is written last and never overwritten. A row there means that run's gold tables
+are complete, so readers (like the review notebook) use the latest completed `run_id` and never see
+a half-finished run.
 
 **Control statuses:** `MATCHED`, `COUNT_BREAK`, `AMOUNT_BREAK`, `COUNT_AND_AMOUNT_BREAK`,
-`MISSING_IN_TARGET`, `MISSING_IN_SOURCE`.
+`MISSING_IN_TARGET`, `MISSING_IN_SOURCE`, and `EXTRACT_MISSING` when one side's file never arrived.
+That last one is a delivery problem, not a data break, so no transaction-level detail is produced for it.
 
 **Record break types:** `MISSING_IN_TARGET`, `UNEXPECTED_IN_TARGET`, `DUPLICATE_IN_TARGET`,
 `DUPLICATE_IN_SOURCE`, `ATTRIBUTE_MISMATCH`, `AMOUNT_MISMATCH`.
+
+### The daily job
+
+```
+use_synthetic_data? -> generate_synthetic -> ingest -> reconcile -> check_breaks
+```
+
+- **Which date it reconciles.** Databricks reports job times in UTC. A scheduled run therefore works
+  out the date in the business timezone and takes the day before (`calendar` in `systems.yml`:
+  `Asia/Singapore`, `lag_days: 1`). Any other run, including **Run now**, must pass the date
+  explicitly or it stops with a clear error. This prevents a manual run from silently reconciling the
+  wrong day.
+- **A missing extract doesn't crash the run.** A system that delivered nothing (no folder, an empty
+  folder or a zero-byte file) is recorded as `MISSING`, and the other hops are still reconciled. A
+  file whose columns changed still fails immediately, because guessing would be worse.
+- **Red means two different things, by task.** If `check_breaks` fails, the data has breaks or an
+  extract is missing, and the results are ready to review. If an earlier task fails, the pipeline
+  itself broke. Either way, the person who deployed the bundle gets an email.
+- **One run at a time.** `max_concurrent_runs: 1` with queueing, so two runs never write the same
+  tables at once.
 
 ### Synthetic data
 
@@ -60,14 +86,15 @@ whether the recon found every one of them.
 databricks.yml                 bundle definition: targets free / azure_dev
 resources/
   e2e_recon.schema.yml         UC schema + landing volume
-  e2e_recon.job.yml            daily job: generate (optional) -> ingest -> reconcile
+  e2e_recon.job.yml            daily job: generate (optional) -> ingest -> reconcile -> check
 src/e2e_recon/
   conf/systems.yml             flow definition and per-system layouts
   config.py                    typed config, stages and hops, table names
   adapters.py                  raw <-> standard mapping per system
   reconciler.py                control totals and record-level comparison
   pipeline.py                  bronze -> silver -> gold for one date
-  storage.py                   Delta writes, one date at a time
+  storage.py                   Delta writes: one date at a time, run log append-only
+  dates.py                     which business date a run reconciles
   synthetic.py                 synthetic flow with an answer key
   cli.py                       `recon` entry point used by job tasks
 notebooks/review_breaks.py     review results in the workspace
@@ -117,8 +144,12 @@ databricks auth login --host https://<your-workspace>.cloud.databricks.com --pro
 ```powershell
 databricks bundle validate -t free
 databricks bundle deploy -t free
-databricks bundle run e2e_recon_daily -t free
+databricks bundle run e2e_recon_daily -t free --params business_date=2026-10-30
 ```
+
+A manual run needs `business_date`; only the schedule picks a date by itself. With synthetic data,
+`check_breaks` fails on purpose, because the generator injects breaks. That's the alert working, and
+the results are ready in the notebook.
 
 4. In the workspace, open **Jobs & Pipelines → [dev …] e2e_recon_daily** to see the run. Then open
    `notebooks/review_breaks.py` under the bundle folder in **Workspace**.
@@ -127,8 +158,6 @@ Because `mode: development` is set, the deployed schema name gets a prefix like
 `dev_<your_user>_e2e_recon`. The job resolves this automatically. For the notebook, check the actual
 name in **Catalog → workspace** or with `databricks bundle summary -t free`, and enter it in the
 `schema` widget.
-
-To run for a specific date: `databricks bundle run e2e_recon_daily -t free --params business_date=2026-10-30`.
 
 **Optional:** to edit in the Databricks UI as well, go to **Workspace → Create → Git folder** and
 paste `https://github.com/timwteng/E2E_Recon.git`. Deploy from your machine with the CLI either way.
@@ -153,8 +182,10 @@ For a shared, scheduled setup, add a `prod` target with `mode: production`, a se
 2. Have each upstream system drop its daily file at
    `/Volumes/<catalog>/<schema>/landing/<system>/business_date=YYYY-MM-DD/`.
 3. Update `systems.yml` with the real column names, date formats, amount scales and code mappings.
-4. To fail the job, and trigger alerts, when breaks are found, add `--fail-on-break` to the
-   reconcile task.
+4. Failure emails go to whoever deployed the bundle. To send them to a team mailbox instead,
+   change `email_notifications` in `resources/e2e_recon.job.yml`.
+5. If upstream files land later than 06:00 Singapore time, move the schedule. A file that arrives
+   after the run shows as `EXTRACT_MISSING`; rerun that date once it lands.
 
 Things a production version would add: timing tolerance for transactions that legitimately post at
 the next stage on T+1, a GL that receives aggregated journals instead of individual transactions, and

@@ -6,14 +6,22 @@ instead of failing the job (Databricks serverless runs with ANSI mode on).
 
 from datetime import date
 
+from pyspark.errors import AnalysisException
 from pyspark.sql import Column, DataFrame, SparkSession
 from pyspark.sql import functions as F
+from pyspark.sql import types as T
 
 from e2e_recon.config import DIRECTIONS, STANDARD_FIELDS, SystemSpec
 
 AMOUNT_TYPE = "decimal(18,2)"
 BRONZE_DATE_COL = "_business_date"
 STANDARD_COLUMNS = ("system", "stage", *STANDARD_FIELDS, "source_file", "ingested_at")
+# Spark's error conditions for "nothing to read": no folder, or a folder with no data files.
+_NOTHING_TO_READ = ("PATH_NOT_FOUND", "UNABLE_TO_INFER_SCHEMA")
+
+
+class MissingExtractError(Exception):
+    """A system delivered nothing for the business date (no folder, empty folder or zero-byte file)."""
 
 
 class SystemAdapter:
@@ -29,15 +37,27 @@ class SystemAdapter:
 
     # ---------------------------------------------------------------- read side
     def read_raw(self, spark: SparkSession, path: str, business_date: date) -> DataFrame:
-        """Load one day's extract as strings, plus lineage columns. This is the bronze record."""
+        """Load one day's extract as strings, plus lineage columns. This is the bronze record.
+
+        Raises MissingExtractError when nothing was delivered, and ValueError when a file
+        arrived but its layout no longer matches the configured columns.
+        """
         reader = spark.read.format(self.spec.file_format)
         if self.spec.file_format == "csv":
             reader = reader.option("header", True).option("inferSchema", False)
         else:
             reader = reader.option("primitivesAsString", True)
-        df = reader.load(path)
+        try:
+            df = reader.load(path)
+            columns = df.columns  # forces analysis, which is lazy under Spark Connect
+        except AnalysisException as exc:
+            if _error_condition(exc) in _NOTHING_TO_READ:
+                raise MissingExtractError(f"{self.spec.name}: no extract at {path}") from exc
+            raise
+        if not columns:
+            raise MissingExtractError(f"{self.spec.name}: extract at {path} is empty")
 
-        missing = [c for c in self.raw_columns if c not in df.columns]
+        missing = [c for c in self.raw_columns if c not in columns]
         if missing:
             raise ValueError(f"{self.spec.name}: extract at {path} is missing columns {missing}")
 
@@ -47,6 +67,18 @@ class SystemAdapter:
             F.col("_metadata.file_name").alias("_source_file"),
             F.current_timestamp().alias("_ingested_at"),
         )
+
+    def empty_bronze(self, spark: SparkSession) -> DataFrame:
+        """Zero bronze rows with the bronze schema, used to clear a date whose extract is missing."""
+        schema = T.StructType(
+            [T.StructField(c, T.StringType()) for c in self.raw_columns]
+            + [
+                T.StructField(BRONZE_DATE_COL, T.DateType()),
+                T.StructField("_source_file", T.StringType()),
+                T.StructField("_ingested_at", T.TimestampType()),
+            ]
+        )
+        return spark.createDataFrame([], schema)
 
     def standardize(self, bronze: DataFrame) -> tuple[DataFrame, DataFrame]:
         """Split bronze rows into (valid standard rows, rejected rows with a reason)."""
@@ -139,3 +171,11 @@ class SystemAdapter:
             .when(F.coalesce(F.length("currency"), F.lit(0)) != 3, "INVALID_CURRENCY")
             .when(F.col("amount").isNull(), "INVALID_AMOUNT")
         )
+
+
+def _error_condition(exc: AnalysisException) -> str | None:
+    """PySpark 4 names it getCondition(); older PySpark versions only have getErrorClass()."""
+    for getter in ("getCondition", "getErrorClass"):
+        if hasattr(exc, getter):
+            return getattr(exc, getter)()
+    return None

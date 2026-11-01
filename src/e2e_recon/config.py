@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from importlib import resources
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import yaml
 
@@ -60,6 +61,19 @@ class ReconRules:
 
 
 @dataclass(frozen=True)
+class BusinessCalendar:
+    """How a scheduled run picks its business date: `lag_days` before the run's local date."""
+
+    timezone: str = "Asia/Singapore"
+    lag_days: int = 1
+
+    def __post_init__(self) -> None:
+        ZoneInfo(self.timezone)  # raises for an unknown zone
+        if self.lag_days < 0:
+            raise ValueError("lag_days must be >= 0")
+
+
+@dataclass(frozen=True)
 class HopPair:
     """Two systems whose totals must agree. ADJACENT pairs localise breaks; END_TO_END proves the whole flow."""
 
@@ -76,6 +90,7 @@ class HopPair:
 class ReconConfig:
     rules: ReconRules
     systems: tuple[SystemSpec, ...]
+    calendar: BusinessCalendar = BusinessCalendar()
 
     def __post_init__(self) -> None:
         if len(self.systems) < 2:
@@ -127,7 +142,8 @@ class ReconConfig:
             )
             for s in raw["systems"]
         )
-        return cls(rules=rules, systems=systems)
+        calendar = BusinessCalendar(**raw.get("calendar", {}))
+        return cls(rules=rules, systems=systems, calendar=calendar)
 
 
 @dataclass(frozen=True)
@@ -159,6 +175,14 @@ class TableNames:
     @property
     def silver_rejects(self) -> str:
         return self._fq("silver_rejects")
+
+    @property
+    def silver_extract_status(self) -> str:
+        return self._fq("silver_extract_status")
+
+    @property
+    def gold_run_status(self) -> str:
+        return self._fq("gold_run_status")
 
     @property
     def gold_control_totals(self) -> str:

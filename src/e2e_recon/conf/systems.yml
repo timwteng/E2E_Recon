@@ -15,6 +15,12 @@ recon:
   control_keys: [business_date, direction, currency, txn_type]
   amount_tolerance: "0.00"
 
+# Scheduled runs reconcile the day `lag_days` before the run's date in this
+# timezone. Manual runs must pass an explicit business date.
+calendar:
+  timezone: Asia/Singapore
+  lag_days: 1
+
 systems:
   - name: card_switch
     description: Card switch / scheme gateway, first point of capture

@@ -17,7 +17,7 @@ def test_recon_detects_exactly_the_injected_breaks(spark, config, store, tmp_pat
     tables = TableNames("workspace", "e2e_recon")
     pipeline = ReconPipeline(spark, config, tables, store, landing_root=str(tmp_path))
 
-    ingest = pipeline.ingest(BUSINESS_DATE)
+    ingest = pipeline.ingest(BUSINESS_DATE, run_id="test-run")
     assert ingest.loaded == {name: len(rows) for name, rows in flow.records.items()}
     assert set(ingest.rejected.values()) == {0}
 
@@ -50,9 +50,13 @@ def test_rerun_is_idempotent(spark, config, store, tmp_path):
     generator.land(spark, generator.generate(BUSINESS_DATE), str(tmp_path))
     pipeline = ReconPipeline(spark, config, TableNames("workspace", "e2e_recon"), store, landing_root=str(tmp_path))
 
-    first = (pipeline.ingest(BUSINESS_DATE), pipeline.reconcile(BUSINESS_DATE, "run-1"))
-    second = (pipeline.ingest(BUSINESS_DATE), pipeline.reconcile(BUSINESS_DATE, "run-2"))
+    first = (pipeline.ingest(BUSINESS_DATE, "run-1"), pipeline.reconcile(BUSINESS_DATE, "run-1"))
+    second = (pipeline.ingest(BUSINESS_DATE, "run-2"), pipeline.reconcile(BUSINESS_DATE, "run-2"))
 
     assert first[0] == second[0]
     assert first[1].pair_status == second[1].pair_status
     assert store.read("workspace.e2e_recon.gold_recon_results").select("run_id").distinct().count() == 1
+
+    # The run log keeps every attempt; readers take the latest completed one.
+    assert store.read("workspace.e2e_recon.gold_run_status").count() == 2
+    assert pipeline.latest_completed_run(BUSINESS_DATE).run_id == "run-2"

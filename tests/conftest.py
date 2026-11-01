@@ -21,14 +21,23 @@ class InMemoryTableStore(TableStore):
     def __init__(self) -> None:
         self.tables: dict[str, DataFrame] = {}
 
+    def exists(self, table: str) -> bool:
+        return table in self.tables
+
     def read(self, table: str) -> DataFrame:
         return self.tables[table]
 
     def overwrite_date(self, df: DataFrame, table: str, date_column: str, business_date: date) -> None:
         existing = self.tables.get(table)
         kept = existing.filter(F.col(date_column) != F.lit(business_date)) if existing is not None else None
-        merged = df if kept is None else kept.unionByName(df)
-        self.tables[table] = merged.localCheckpoint()  # materialise, like a real table write
+        self._save(table, df if kept is None else kept.unionByName(df))
+
+    def append(self, df: DataFrame, table: str) -> None:
+        existing = self.tables.get(table)
+        self._save(table, df if existing is None else existing.unionByName(df))
+
+    def _save(self, table: str, df: DataFrame) -> None:
+        self.tables[table] = df.localCheckpoint()  # materialise, like a real table write
 
 
 @pytest.fixture(scope="session")

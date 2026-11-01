@@ -8,7 +8,8 @@ version = "0.1.0"
 description = "End-to-end transaction count and amount reconciliation across a multi-system flow"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["pyyaml>=6.0"]
+# tzdata supplies timezone rules where the OS has none (e.g. Windows), so zoneinfo works everywhere.
+dependencies = ["pyyaml>=6.0", "tzdata"]
 
 [project.optional-dependencies]
 # PySpark is provided by Databricks at runtime; install it only for local development.

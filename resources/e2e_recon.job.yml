@@ -2,11 +2,25 @@ resources:
   jobs:
     e2e_recon_daily:
       name: e2e_recon_daily
-      description: Land (optional) -> ingest -> reconcile, for one business date
+      description: >-
+        Land (optional) -> ingest -> reconcile -> check, for one business date.
+        A failed check_breaks task means the data has breaks or a missing extract;
+        a failure in any earlier task means the pipeline itself broke.
 
+      # Leave business_date empty for scheduled runs: the date is derived as T-1 in the
+      # calendar timezone from systems.yml. Manual runs must set it explicitly.
       parameters:
         - name: business_date
-          default: "{{job.start_time.iso_date}}"
+          default: ""
+
+      # Never let two runs write the same tables at once; a second trigger waits in the queue.
+      max_concurrent_runs: 1
+      queue:
+        enabled: true
+
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
 
       schedule:
         quartz_cron_expression: "0 0 6 * * ?"   # 06:00 daily, after upstream extracts land
@@ -34,6 +48,9 @@ resources:
               - --schema=${resources.schemas.e2e_recon.name}
               - --landing-root=/Volumes/${var.catalog}/${resources.schemas.e2e_recon.name}/${resources.volumes.landing.name}
               - --business-date={{job.parameters.business_date}}
+              - --trigger-type={{job.trigger.type}}
+              - --trigger-time={{job.trigger.time.iso_datetime}}
+              - --run-id={{job.run_id}}
 
         - task_key: ingest
           depends_on:
@@ -49,6 +66,9 @@ resources:
               - --schema=${resources.schemas.e2e_recon.name}
               - --landing-root=/Volumes/${var.catalog}/${resources.schemas.e2e_recon.name}/${resources.volumes.landing.name}
               - --business-date={{job.parameters.business_date}}
+              - --trigger-type={{job.trigger.type}}
+              - --trigger-time={{job.trigger.time.iso_datetime}}
+              - --run-id={{job.run_id}}
 
         - task_key: reconcile
           depends_on:
@@ -62,7 +82,24 @@ resources:
               - --catalog=${var.catalog}
               - --schema=${resources.schemas.e2e_recon.name}
               - --business-date={{job.parameters.business_date}}
+              - --trigger-type={{job.trigger.type}}
+              - --trigger-time={{job.trigger.time.iso_datetime}}
               - --run-id={{job.run_id}}
+
+        - task_key: check_breaks
+          depends_on:
+            - task_key: reconcile
+          environment_key: default
+          python_wheel_task:
+            package_name: e2e_recon
+            entry_point: recon
+            parameters:
+              - check
+              - --catalog=${var.catalog}
+              - --schema=${resources.schemas.e2e_recon.name}
+              - --business-date={{job.parameters.business_date}}
+              - --trigger-type={{job.trigger.type}}
+              - --trigger-time={{job.trigger.time.iso_datetime}}
 
       environments:
         - environment_key: default
