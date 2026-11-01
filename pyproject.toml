@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "e2e_recon"
+version = "0.1.0"
+description = "End-to-end transaction count and amount reconciliation across a multi-system flow"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["pyyaml>=6.0"]
+
+[project.optional-dependencies]
+# PySpark is provided by Databricks at runtime; install it only for local development.
+dev = ["pyspark==4.0.1", "pytest>=8", "build>=1.2"]
+
+[project.scripts]
+recon = "e2e_recon.cli:entrypoint"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+e2e_recon = ["conf/*.yml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

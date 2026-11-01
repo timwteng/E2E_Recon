@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv*/
+.pytest_cache/
+
+# Spark local runs
+spark-warehouse/
+metastore_db/
+derby.log
+_local_landing/
+
+# Databricks bundle state
+.databricks/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

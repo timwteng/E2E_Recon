@@ -1,0 +1,85 @@
+# End-to-end reconciliation definition.
+#
+# A transaction is captured by the system at hop 1 and must arrive, unchanged,
+# at every later hop. The recon checks transaction COUNT and AMOUNT per control
+# key at every adjacent hop (to localise where a break happens) and end to end.
+#
+# Each system extract has its own layout. `columns` maps the standard field
+# (left) to the raw column name in that system's file (right). `value_maps`
+# translates raw codes into the standard vocabulary.
+
+recon:
+  control_keys: [business_date, direction, currency, txn_type]
+  amount_tolerance: "0.00"
+
+systems:
+  - name: card_switch
+    description: Card switch / scheme gateway, first point of capture
+    hop: 1
+    file_format: csv
+    date_format: yyyyMMdd
+    amount_scale: 100            # amounts arrive in minor units (cents)
+    columns:
+      txn_id: TXN_REF
+      business_date: TXN_DT
+      direction: DR_CR
+      txn_type: TXN_CODE
+      currency: CCY
+      amount: AMT_MINOR
+    value_maps:
+      direction: {D: OUT, C: IN}
+      txn_type:
+        "05": PURCHASE
+        "07": CASH_ADVANCE
+        "19": FEE
+        "06": REFUND
+        "20": REPAYMENT
+
+  - name: card_processing
+    description: Card processing platform, posts to card accounts
+    hop: 2
+    file_format: json
+    date_format: yyyy-MM-dd
+    columns:
+      txn_id: transactionId
+      business_date: postingDate
+      direction: direction
+      txn_type: type
+      currency: currency
+      amount: amount
+
+  - name: payment_hub
+    description: Payment hub, settles with schemes and channels
+    hop: 3
+    file_format: csv
+    date_format: yyyy-MM-dd
+    columns:
+      txn_id: ref_no
+      business_date: value_date
+      direction: flow
+      txn_type: product
+      currency: ccy
+      amount: amt
+    value_maps:
+      direction: {OUTGOING: OUT, INCOMING: IN}
+
+  - name: general_ledger
+    description: General ledger, final accounting posting
+    hop: 4
+    file_format: csv
+    date_format: dd/MM/yyyy
+    columns:
+      txn_id: jrnl_src_ref
+      business_date: posting_dt
+      direction: dr_cr_ind
+      txn_type: gl_product
+      currency: ccy_cd
+      amount: lcl_amt
+    value_maps:
+      direction: {DR: OUT, CR: IN}
+      txn_type:
+        CC_PUR: PURCHASE
+        CC_CSH: CASH_ADVANCE
+        CC_FEE: FEE
+        CC_RFD: REFUND
+        CC_PMT: REPAYMENT

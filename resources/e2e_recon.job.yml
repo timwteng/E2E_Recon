@@ -1,0 +1,72 @@
+resources:
+  jobs:
+    e2e_recon_daily:
+      name: e2e_recon_daily
+      description: Land (optional) -> ingest -> reconcile, for one business date
+
+      parameters:
+        - name: business_date
+          default: "{{job.start_time.iso_date}}"
+
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?"   # 06:00 daily, after upstream extracts land
+        timezone_id: Asia/Singapore
+        pause_status: PAUSED
+
+      tasks:
+        - task_key: use_synthetic_data
+          condition_task:
+            op: EQUAL_TO
+            left: ${var.use_synthetic_data}
+            right: "true"
+
+        - task_key: generate_synthetic
+          depends_on:
+            - task_key: use_synthetic_data
+              outcome: "true"
+          environment_key: default
+          python_wheel_task:
+            package_name: e2e_recon
+            entry_point: recon
+            parameters:
+              - generate
+              - --catalog=${var.catalog}
+              - --schema=${resources.schemas.e2e_recon.name}
+              - --landing-root=/Volumes/${var.catalog}/${resources.schemas.e2e_recon.name}/${resources.volumes.landing.name}
+              - --business-date={{job.parameters.business_date}}
+
+        - task_key: ingest
+          depends_on:
+            - task_key: generate_synthetic
+          run_if: NONE_FAILED   # still runs when generate_synthetic is skipped
+          environment_key: default
+          python_wheel_task:
+            package_name: e2e_recon
+            entry_point: recon
+            parameters:
+              - ingest
+              - --catalog=${var.catalog}
+              - --schema=${resources.schemas.e2e_recon.name}
+              - --landing-root=/Volumes/${var.catalog}/${resources.schemas.e2e_recon.name}/${resources.volumes.landing.name}
+              - --business-date={{job.parameters.business_date}}
+
+        - task_key: reconcile
+          depends_on:
+            - task_key: ingest
+          environment_key: default
+          python_wheel_task:
+            package_name: e2e_recon
+            entry_point: recon
+            parameters:
+              - reconcile
+              - --catalog=${var.catalog}
+              - --schema=${resources.schemas.e2e_recon.name}
+              - --business-date={{job.parameters.business_date}}
+              - --run-id={{job.run_id}}
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"   # serverless environment v2 = Python 3.11
+            dependencies:
+              - ../dist/*.whl

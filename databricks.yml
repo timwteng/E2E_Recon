@@ -1,0 +1,39 @@
+# Databricks Asset Bundle for the E2E recon app.
+#   databricks bundle deploy -t free      # Databricks Free Edition (serverless only)
+#   databricks bundle deploy -t azure_dev # Azure Databricks, later
+bundle:
+  name: e2e_recon
+
+include:
+  - resources/*.yml
+
+artifacts:
+  e2e_recon_wheel:
+    type: whl
+    path: .
+    build: python -m build --wheel
+
+variables:
+  catalog:
+    description: Unity Catalog catalog that holds the recon schema
+    default: workspace
+  schema:
+    description: Schema for bronze/silver/gold tables and the landing volume
+    default: e2e_recon
+  use_synthetic_data:
+    description: '"true" lands generated extracts before each run; set "false" once real extracts arrive'
+    default: "true"
+
+targets:
+  free:
+    mode: development
+    default: true
+    workspace:
+      profile: free            # created by: databricks auth login --host <free-edition-url> --profile free
+
+  azure_dev:
+    mode: development
+    workspace:
+      profile: azure           # created by: databricks auth login --host https://adb-<id>.<n>.azuredatabricks.net --profile azure
+    variables:
+      catalog: main            # change to the UC catalog your Azure workspace grants you
