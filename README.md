@@ -68,20 +68,20 @@ src/e2e_recon/
   cli.py                       `recon` entry point used by job tasks
 notebooks/review_breaks.py     review results in the workspace
 tests/                         pytest, including a full pipeline run vs the answer key
+.github/workflows/ci.yml       GitHub Actions: tests + wheel build on Python 3.11
 ```
 
-## 1. Push to GitHub
+## 1. Repository and CI
 
-Git is already initialised with the first commit and `origin` set to
-`https://github.com/GnF97/E2E_Recon.git`.
-
-1. On GitHub, create an **empty** repository named `E2E_Recon` under `GnF97`. Don't add a README,
-   `.gitignore` or license.
-2. In this folder, run:
+The code lives at <https://github.com/timwteng/E2E_Recon>. To work on another machine:
 
 ```powershell
-git push -u origin main
+git clone https://github.com/timwteng/E2E_Recon.git
 ```
+
+GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on every push and pull
+request to `main`. It sets up Python 3.11 and Java 17, runs `pytest`, and builds the wheel. Results
+show up in the repo's **Actions** tab.
 
 > This folder is inside OneDrive. Git works there, but if OneDrive ever reports sync conflicts on
 > `.git`, move the project to a non-synced path such as `C:\dev\E2E_Recon`.
@@ -127,7 +127,7 @@ name in **Catalog → workspace** or with `databricks bundle summary -t free`, a
 To run for a specific date: `databricks bundle run e2e_recon_daily -t free --params business_date=2026-10-30`.
 
 **Optional:** to edit in the Databricks UI as well, go to **Workspace → Create → Git folder** and
-paste `https://github.com/GnF97/E2E_Recon.git`. Deploy from your machine with the CLI either way.
+paste `https://github.com/timwteng/E2E_Recon.git`. Deploy from your machine with the CLI either way.
 
 ## 4. Move to Azure Databricks later
 
