@@ -8,13 +8,17 @@ The example flow is a credit card payment, where every incoming (refunds, repaym
 
 ```
 card_switch  ->  card_processing  ->  payment_hub  ->  general_ledger
-  (hop 1)           (hop 2)             (hop 3)           (hop 4)
+ (stage 1)         (stage 2)           (stage 3)         (stage 4)
+            hop 1→2            hop 2→3           hop 3→4
 ```
 
-For each business date the recon proves that what entered hop 1 arrived at every later hop with the
-same count and amount. It runs three kinds of check:
+**Terms:** a *stage* is one system in the flow, numbered by its position. A *hop* is the move
+between two stages.
 
-- **Adjacent hops** (1→2, 2→3, 3→4) show *where* a break happened.
+For each business date the recon proves that what entered stage 1 arrived at every later stage with
+the same count and amount. It runs three kinds of check:
+
+- **Each hop** (1→2, 2→3, 3→4) shows *where* a break happened.
 - **End to end** (1→4) shows whether the flow as a whole balances.
 - **Record-level detail** explains each control break: the transactions that are missing, unexpected,
   duplicated, or have a changed amount or attributes.
@@ -28,7 +32,7 @@ same count and amount. It runs three kinds of check:
 | Silver | `silver_txn` | All systems mapped to one standard schema |
 | Silver | `silver_rejects` | Rows that failed parsing, with a reason |
 | Gold | `gold_control_totals` | Count and amount per system × date × direction × currency × txn type |
-| Gold | `gold_recon_results` | Source vs target totals per hop pair, with diff and status |
+| Gold | `gold_recon_results` | Source vs target totals per hop and end to end, with diff and status |
 | Gold | `gold_break_details` | Transactions behind each break |
 
 Each system's layout is declared in [`src/e2e_recon/conf/systems.yml`](src/e2e_recon/conf/systems.yml):
@@ -59,7 +63,7 @@ resources/
   e2e_recon.job.yml            daily job: generate (optional) -> ingest -> reconcile
 src/e2e_recon/
   conf/systems.yml             flow definition and per-system layouts
-  config.py                    typed config, hop pairs, table names
+  config.py                    typed config, stages and hops, table names
   adapters.py                  raw <-> standard mapping per system
   reconciler.py                control totals and record-level comparison
   pipeline.py                  bronze -> silver -> gold for one date
@@ -153,5 +157,5 @@ For a shared, scheduled setup, add a `prod` target with `mode: production`, a se
    reconcile task.
 
 Things a production version would add: timing tolerance for transactions that legitimately post at
-the next hop on T+1, a GL that receives aggregated journals instead of individual transactions, and
+the next stage on T+1, a GL that receives aggregated journals instead of individual transactions, and
 break ageing and ownership workflow.

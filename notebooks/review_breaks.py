@@ -1,7 +1,7 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # E2E recon: review breaks
-# MAGIC Control totals by hop, then the transactions behind each break. Set the widgets, then Run all.
+# MAGIC Control totals for each hop (stage to stage), then the transactions behind each break. Set the widgets, then Run all.
 
 # COMMAND ----------
 

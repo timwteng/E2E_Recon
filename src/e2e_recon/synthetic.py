@@ -1,6 +1,6 @@
 """Synthetic credit-card flow through every configured system, with known breaks injected.
 
-Breaks are injected on the way into each hop and carried downstream, so each one
+Breaks are injected on the way into each stage and carried downstream, so each one
 shows up at exactly one ADJACENT pair (plus END_TO_END). The injected breaks are
 returned as an answer key so the recon can be checked against ground truth.
 """

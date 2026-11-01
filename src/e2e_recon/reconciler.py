@@ -20,7 +20,7 @@ class HopReconciler:
     # ------------------------------------------------------------ control level
     def control_totals(self, txns: DataFrame) -> DataFrame:
         """Transaction count and amount per system and control key."""
-        return txns.groupBy("system", "hop", *self.rules.control_keys).agg(
+        return txns.groupBy("system", "stage", *self.rules.control_keys).agg(
             F.count(F.lit(1)).alias("txn_count"),
             F.sum("amount").cast(TOTAL_AMOUNT_TYPE).alias("txn_amount"),
         )

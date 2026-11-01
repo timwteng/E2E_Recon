@@ -13,7 +13,7 @@ from e2e_recon.config import DIRECTIONS, STANDARD_FIELDS, SystemSpec
 
 AMOUNT_TYPE = "decimal(18,2)"
 BRONZE_DATE_COL = "_business_date"
-STANDARD_COLUMNS = ("system", "hop", *STANDARD_FIELDS, "source_file", "ingested_at")
+STANDARD_COLUMNS = ("system", "stage", *STANDARD_FIELDS, "source_file", "ingested_at")
 
 
 class SystemAdapter:
@@ -52,7 +52,7 @@ class SystemAdapter:
         """Split bronze rows into (valid standard rows, rejected rows with a reason)."""
         parsed = bronze.select(
             F.lit(self.spec.name).alias("system"),
-            F.lit(self.spec.hop).alias("hop"),
+            F.lit(self.spec.stage).alias("stage"),
             F.trim(self._raw("txn_id")).alias("txn_id"),
             F.to_date(F.expr(f"try_to_timestamp(trim({self._quoted('business_date')}), '{self.spec.date_format}')"))
             .alias("business_date"),
@@ -71,7 +71,7 @@ class SystemAdapter:
         valid = parsed.filter(F.col("reject_reason").isNull()).select(*STANDARD_COLUMNS)
         rejected = parsed.filter(F.col("reject_reason").isNotNull()).select(
             "system",
-            "hop",
+            "stage",
             F.col("_landing_date").alias("business_date"),
             "reject_reason",
             "raw_record",

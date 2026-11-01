@@ -3,13 +3,13 @@ from decimal import Decimal
 from conftest import BUSINESS_DATE
 from e2e_recon.reconciler import HopReconciler
 
-COLUMNS = ["system", "hop", "txn_id", "business_date", "direction", "txn_type", "currency", "amount"]
+COLUMNS = ["system", "stage", "txn_id", "business_date", "direction", "txn_type", "currency", "amount"]
 
 
 def _txns(spark, rows):
     return spark.createDataFrame(
         [(s, h, t, BUSINESS_DATE, d, ty, c, Decimal(a)) for s, h, t, d, ty, c, a in rows],
-        "system string, hop int, txn_id string, business_date date, direction string, "
+        "system string, stage int, txn_id string, business_date date, direction string, "
         "txn_type string, currency string, amount decimal(18,2)",
     )
 

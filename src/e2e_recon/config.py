@@ -19,7 +19,7 @@ class SystemSpec:
     """How one system's extract is laid out and how to map it to the standard schema."""
 
     name: str
-    hop: int
+    stage: int
     file_format: str
     date_format: str
     columns: dict[str, str]
@@ -80,12 +80,12 @@ class ReconConfig:
     def __post_init__(self) -> None:
         if len(self.systems) < 2:
             raise ValueError("At least two systems are required")
-        hops = [s.hop for s in self.systems]
+        stages = [s.stage for s in self.systems]
         names = [s.name for s in self.systems]
-        if len(set(hops)) != len(hops) or len(set(names)) != len(names):
-            raise ValueError("System names and hop numbers must be unique")
-        if hops != sorted(hops):
-            object.__setattr__(self, "systems", tuple(sorted(self.systems, key=lambda s: s.hop)))
+        if len(set(stages)) != len(stages) or len(set(names)) != len(names):
+            raise ValueError("System names and stage numbers must be unique")
+        if stages != sorted(stages):
+            object.__setattr__(self, "systems", tuple(sorted(self.systems, key=lambda s: s.stage)))
 
     @property
     def hop_pairs(self) -> tuple[HopPair, ...]:
@@ -117,7 +117,7 @@ class ReconConfig:
         systems = tuple(
             SystemSpec(
                 name=s["name"],
-                hop=int(s["hop"]),
+                stage=int(s["stage"]),
                 file_format=s["file_format"],
                 date_format=s["date_format"],
                 columns=dict(s["columns"]),
